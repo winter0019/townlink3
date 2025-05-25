@@ -1,0 +1,120 @@
+// admin.js
+document.addEventListener('DOMContentLoaded', () => {
+    const API_BASE_URL = 'http://localhost:3000/api'; // Keep for local testing
+
+    const adminKeyInput = document.getElementById('adminKeyInput');
+    const submitAdminKeyButton = document.getElementById('submitAdminKey');
+    const adminKeyPrompt = document.getElementById('admin-key-prompt');
+    const adminMessage = document.getElementById('adminMessage');
+    const pendingBusinessesList = document.getElementById('pending-businesses-list');
+
+    const mobileMenuButton = document.getElementById('mobile-menu-button');
+    const navMenu = document.getElementById('nav-menu');
+
+    // IMPORTANT: For a real application, this admin key should NOT be hardcoded in frontend JS.
+    // It would be part of a proper admin login system.
+    const LOCAL_ADMIN_KEY = 'supersecretadminkey'; // Must match ADMIN_KEY in server.js
+
+    const fetchPendingBusinesses = async (enteredAdminKey) => {
+        try {
+            adminMessage.textContent = 'Loading pending businesses...';
+            const response = await fetch(`${API_BASE_URL}/businesses?status=pending`);
+            if (!response.ok) {
+                // If not authorized (403 from backend), show specific message
+                if (response.status === 403) {
+                    adminMessage.textContent = 'Unauthorized: Invalid admin key.';
+                    adminMessage.classList.add('text-red-500');
+                    adminKeyPrompt.classList.remove('hidden'); // Show prompt again
+                    pendingBusinessesList.classList.add('hidden');
+                    return;
+                }
+                throw new Error('Failed to fetch pending businesses');
+            }
+            const businesses = await response.json();
+            renderPendingBusinesses(businesses, enteredAdminKey); // Pass key for approval calls
+            adminMessage.textContent = ''; // Clear message on success
+            adminKeyPrompt.classList.add('hidden'); // Hide prompt on success
+            pendingBusinessesList.classList.remove('hidden'); // Show list
+        } catch (error) {
+            console.error('Error fetching pending businesses:', error);
+            adminMessage.textContent = 'Error loading pending businesses. Please try again.';
+            adminMessage.classList.add('text-red-500');
+        }
+    };
+
+    const renderPendingBusinesses = (businesses, adminKey) => {
+        pendingBusinessesList.innerHTML = '';
+        if (businesses.length === 0) {
+            pendingBusinessesList.innerHTML = '<p class="text-gray-600">No pending businesses found.</p>';
+            return;
+        }
+
+        businesses.forEach(business => {
+            const businessCard = `
+                <div class="bg-gray-100 p-4 rounded-lg shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                    <div>
+                        <h3 class="text-lg font-semibold">${business.name}</h3>
+                        <p class="text-sm text-gray-700">Category: ${business.category}</p>
+                        <p class="text-sm text-gray-700">Location: ${business.location}</p>
+                        <p class="text-sm text-gray-500">Description: ${business.description.substring(0, 80)}...</p>
+                    </div>
+                    <button data-id="${business.id}" class="approve-button mt-3 sm:mt-0 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">Approve</button>
+                </div>
+            `;
+            pendingBusinessesList.insertAdjacentHTML('beforeend', businessCard);
+        });
+
+        // Add event listeners to the new approve buttons
+        document.querySelectorAll('.approve-button').forEach(button => {
+            button.addEventListener('click', async (event) => {
+                const businessId = event.target.dataset.id;
+                await approveBusiness(businessId, adminKey);
+            });
+        });
+    };
+
+    const approveBusiness = async (businessId, adminKey) => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/businesses/${businessId}/approve`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ adminKey }), // Send admin key for verification
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                alert(`Business "${businessId}" approved successfully!`);
+                fetchPendingBusinesses(adminKey); // Re-fetch list to update
+            } else {
+                alert(data.message || 'Failed to approve business.');
+            }
+        } catch (error) {
+            console.error('Error approving business:', error);
+            alert('An error occurred while approving the business.');
+        }
+    };
+
+    // Event listener for admin key submission
+    submitAdminKeyButton.addEventListener('click', () => {
+        const enteredKey = adminKeyInput.value.trim();
+        if (enteredKey === LOCAL_ADMIN_KEY) {
+            fetchPendingBusinesses(enteredKey);
+        } else {
+            adminMessage.textContent = 'Invalid Admin Key.';
+            adminMessage.classList.add('text-red-500');
+        }
+    });
+
+    // Mobile Menu Toggle (common for all pages)
+    mobileMenuButton.addEventListener('click', () => {
+        navMenu.classList.toggle('hidden');
+    });
+
+    // Initial check if an admin key is already stored (e.g., from a previous session)
+    // For this simplified model, we're not storing the key. User re-enters.
+    // If you wanted to "remember" the admin, you'd store it in localStorage (insecure)
+    // or use a proper session/token system.
+});
